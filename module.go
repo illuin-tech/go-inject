@@ -3,11 +3,13 @@ package goinject
 import (
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 type configuration struct {
-	bindings map[*binding]bool
-	scopes   map[string]Scope
+	bindings       []*binding
+	scopes         map[string]Scope
+	knownProviders []*provideOption
 }
 
 // Option enable to configure the given injector
@@ -47,6 +49,12 @@ type provideOption struct {
 }
 
 func (o *provideOption) apply(mod *configuration) error {
+	if slices.Contains(mod.knownProviders, o) {
+		// already registered, ignore
+		return nil
+	}
+	mod.knownProviders = append(mod.knownProviders, o)
+
 	if o.constructor == nil {
 		return newInjectorConfigurationError("cannot accept nil provider", nil)
 	}
@@ -77,7 +85,7 @@ func (o *provideOption) apply(mod *configuration) error {
 		}
 	}
 
-	mod.bindings[b] = true
+	mod.bindings = append(mod.bindings, b)
 	return nil
 }
 

@@ -19,21 +19,22 @@ type Injector struct {
 
 // NewInjector builds up a new Injector out of a list of Modules with singleton scope
 func NewInjector(options ...Option) (*Injector, error) {
-	mod := &configuration{
-		bindings: make(map[*binding]bool),
-		scopes:   make(map[string]Scope),
+	conf := &configuration{
+		bindings:       []*binding{},
+		scopes:         make(map[string]Scope),
+		knownProviders: []*provideOption{},
 	}
 
-	for _, o := range options {
-		err := o.apply(mod)
+	for _, option := range options {
+		err := option.apply(conf)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	singletonScope := newSingletonScope()
-	mod.scopes[Singleton] = singletonScope
-	mod.scopes[PerLookUp] = newPerLookUpScope()
+	conf.scopes[Singleton] = singletonScope
+	conf.scopes[PerLookUp] = newPerLookUpScope()
 
 	injector := &Injector{
 		bindings:       make(map[reflect.Type]map[string][]*binding),
@@ -49,8 +50,8 @@ func NewInjector(options ...Option) (*Injector, error) {
 		scope:        Singleton,
 	}
 
-	injector.scopes = mod.scopes
-	for b := range mod.bindings {
+	injector.scopes = conf.scopes
+	for _, b := range conf.bindings {
 		_, ok := injector.bindings[b.typeof]
 		if !ok {
 			injector.bindings[b.typeof] = make(map[string][]*binding)

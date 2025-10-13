@@ -685,3 +685,31 @@ func TestInjectorConfigurationError(t *testing.T) {
 		)
 	})
 }
+
+func TestNewInjectorShouldIgnoreMultipleBindings(t *testing.T) {
+	provider := Provide(func() int { return 32 })
+
+	inj, err := NewInjector(
+		provider,
+		provider,
+	)
+	assert.Nil(t, err)
+	err = inj.Invoke(context.Background(), func(val int) {
+		assert.Equal(t, 32, val)
+	})
+	assert.Nil(t, err)
+}
+
+func TestNewInjectorShouldIgnoreMultipleBindingsInDifferentModules(t *testing.T) {
+	sharedModule := Module("shared", Provide(func() int { return 32 }))
+
+	inj, err := NewInjector(
+		Module("module-A", sharedModule),
+		Module("module-B", sharedModule),
+	)
+	assert.Nil(t, err)
+	err = inj.Invoke(context.Background(), func(val int) {
+		assert.Equal(t, 32, val)
+	})
+	assert.Nil(t, err)
+}
