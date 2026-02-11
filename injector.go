@@ -78,7 +78,14 @@ func (injector *Injector) Shutdown() {
 
 // Invoke will execute the parameter function (which must be a function that optionally can return an error).
 // argument of function will be resolved by the injector using configured providers & scope.
-func (injector *Injector) Invoke(ctx context.Context, function any) error {
+func (injector *Injector) Invoke(ctx context.Context, function any) (err error) {
+	// recover from potential panics in user code or reflection
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during invocation: %v", r)
+		}
+	}()
+
 	if function == nil {
 		return newInvalidInputError("can't invoke on nil")
 	}
@@ -89,6 +96,11 @@ func (injector *Injector) Invoke(ctx context.Context, function any) error {
 			fmt.Sprintf("can't invoke non-function %v (type %v)", function, ftype))
 	}
 
+	// 2. check for Typed Nil, reflect.Call on a nil function value causes a panic.
+	if fvalue.IsNil() {
+		return newInvalidInputError(fmt.Sprintf("can't invoke nil function %v", ftype))
+	}
+
 	if ftype.NumOut() > 1 || (ftype.NumOut() == 1 && !ftype.Out(0).AssignableTo(errorReflectType)) {
 		return newInvalidInputError("can't invoke on function whose return type is not error or no return type")
 	}
@@ -97,13 +109,27 @@ func (injector *Injector) Invoke(ctx context.Context, function any) error {
 	if err != nil {
 		return fmt.Errorf("failed to call invokation function: %w", err)
 	}
-	if ftype.NumOut() == 1 {
-		invokationError := res[0].Interface().(error)
-		if invokationError != nil {
-			return fmt.Errorf("invokation returned error: %w", invokationError)
-		}
+	if ftype.NumOut() == 0 {
+		return nil
 	}
-	return nil
+
+	// check slice access
+	if len(res) == 0 {
+		return fmt.Errorf("function expected to return error but reflection result was empty")
+	}
+
+	val := res[0].Interface()
+	// handle the case where the interface is nil (no error returned)
+	if val == nil {
+		return nil
+	}
+
+	// Assert it is an error
+	if invokationError, ok := val.(error); ok {
+		return fmt.Errorf("invokation returned error: %w", invokationError)
+	}
+	// fallback for edge cases where AssignableTo passed but assertion failed
+	return fmt.Errorf("return value was not an error interface: %v", val)
 }
 
 func (injector *Injector) eagerlyCreateSingletons() error {
